@@ -61,6 +61,9 @@ type LinkSettings interface {
 
 	// Advanced settings for the target
 	TargetSettings() TerminusSettings
+
+	// Properties for the link
+	Properties() map[amqp.Symbol]interface{}
 }
 
 // LinkOption can be passed when creating a sender or receiver link to set optional configuration.
@@ -125,6 +128,11 @@ func Filter(m map[amqp.Symbol]interface{}) LinkOption {
 	return func(l *linkSettings) { l.filter = m }
 }
 
+// Properties returns a LinkOption that sets a filter.
+func Properties(m map[amqp.Symbol]interface{}) LinkOption {
+	return func(l *linkSettings) { l.properties = m }
+}
+
 // SourceSettings returns a LinkOption that sets all the SourceSettings.
 // Note: it will override the source address set by a Source() option
 func SourceSettings(ts TerminusSettings) LinkOption {
@@ -173,6 +181,7 @@ type linkSettings struct {
 	filter         map[amqp.Symbol]interface{}
 	session        *session
 	pLink          proton.Link
+	properties     map[amqp.Symbol]interface{}
 }
 
 // Advanced AMQP settings for the source or target of a link.
@@ -199,16 +208,17 @@ type link struct {
 	linkSettings
 }
 
-func (l *linkSettings) Source() string                      { return l.source }
-func (l *linkSettings) Target() string                      { return l.target }
-func (l *linkSettings) LinkName() string                    { return l.linkName }
-func (l *linkSettings) IsSender() bool                      { return l.isSender }
-func (l *linkSettings) IsReceiver() bool                    { return !l.isSender }
-func (l *linkSettings) SndSettle() SndSettleMode            { return l.sndSettle }
-func (l *linkSettings) RcvSettle() RcvSettleMode            { return l.rcvSettle }
-func (l *linkSettings) Filter() map[amqp.Symbol]interface{} { return l.filter }
-func (l *linkSettings) SourceSettings() TerminusSettings    { return l.sourceSettings }
-func (l *linkSettings) TargetSettings() TerminusSettings    { return l.targetSettings }
+func (l *linkSettings) Source() string                          { return l.source }
+func (l *linkSettings) Target() string                          { return l.target }
+func (l *linkSettings) LinkName() string                        { return l.linkName }
+func (l *linkSettings) IsSender() bool                          { return l.isSender }
+func (l *linkSettings) IsReceiver() bool                        { return !l.isSender }
+func (l *linkSettings) SndSettle() SndSettleMode                { return l.sndSettle }
+func (l *linkSettings) RcvSettle() RcvSettleMode                { return l.rcvSettle }
+func (l *linkSettings) Filter() map[amqp.Symbol]interface{}     { return l.filter }
+func (l *linkSettings) Properties() map[amqp.Symbol]interface{} { return l.properties }
+func (l *linkSettings) SourceSettings() TerminusSettings        { return l.sourceSettings }
+func (l *linkSettings) TargetSettings() TerminusSettings        { return l.targetSettings }
 
 func (l *link) Session() Session       { return l.session }
 func (l *link) Connection() Connection { return l.session.Connection() }
@@ -257,6 +267,7 @@ func makeLocalLink(sn *session, isSender bool, setting ...LinkOption) (linkSetti
 
 	l.pLink.SetSndSettleMode(proton.SndSettleMode(l.sndSettle))
 	l.pLink.SetRcvSettleMode(proton.RcvSettleMode(l.rcvSettle))
+
 	l.pLink.Open()
 	return l, nil
 }
@@ -279,6 +290,11 @@ func makeIncomingLinkSettings(pLink proton.Link, sn *session) linkSettings {
 	filter := l.pLink.RemoteSource().Filter()
 	if !filter.Empty() {
 		filter.Unmarshal(&l.filter) // TODO aconway 2017-06-08: ignoring errors
+	}
+
+	properties := l.pLink.RemoteSource().Properties()
+	if !properties.Empty() {
+		properties.Unmarshal(&l.properties)
 	}
 	return l
 }
